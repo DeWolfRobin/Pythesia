@@ -16,6 +16,7 @@ import os
 import random
 
 import time
+from threading import Thread
 
 from kivy.uix.boxlayout import BoxLayout
 
@@ -56,7 +57,7 @@ class Piano(Widget):
     msglog = deque()
     echo_delay = 2
     loaded = False
-    songQueue = list()
+    twice = False
 
     for inp in mido.get_input_names():
         if "Roland Digital Piano" in inp:
@@ -67,7 +68,18 @@ class Piano(Widget):
             outport = mido.open_output(outp)
 
     def playSong(self, song):
-        self.songQueue = list(mido.MidiFile(song))
+        for msg in mido.MidiFile(song).play():
+            if not msg.is_meta:
+                if msg.type == "note_on":
+                    # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
+                    self.keys[msg.note-21].update()
+                if msg.type == "note_off":
+                    # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                    self.keys[msg.note-21].update()
+            self.outport.send(msg)
+        # App.get_running_app().consumables.append("done")
 
     def searchSongInDir(self, name, dir="/home/haywire/midi/"):
         songs = self.ListSongsInDir(dir)
@@ -121,7 +133,6 @@ class Piano(Widget):
             if i == 5:
                 self.keys.append(BlackKey(pos=(offset+139,50)))
 
-
     def update(self, dt):
         # msg = self.inport.receive()
         # if msg.type != "clock":
@@ -135,32 +146,29 @@ class Piano(Widget):
         #         self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
         #         self.keys[msg.note-21].update()
         if self.loaded:
-            if not self.songQueue:
-                self.playSong(self.searchSongInDir("galop"))
-            else:
-                msg = self.songQueue.pop(0)
-                time.sleep(msg.time)
-                if not msg.is_meta:
-                    if msg.type == "note_on":
-                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
-                        self.keys[msg.note-21].update()
-                    if msg.type == "note_off":
-                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                        self.keys[msg.note-21].update()
-                    self.outport.send(msg)
+            self.playSong(self.searchSongInDir("galop"))
         else:
-            self.loaded = True
-
+            if self.twice:
+                self.loaded = True
+            else:
+                self.twice = True
 
 class PianoApp(App):
+    # consumables = ListProperty([])
+
     def build(self):
         game = Piano()
         game.setupPiano()
-        Clock.schedule_interval(game.update, 1.0/200.0)
+
+        Clock.schedule_interval(game.update, 0)
+        # Clock.schedule_interval(self.consume, 0)
         return game
 
+    # def consume(self, *args):
+    #     while self.consumables and time() < (Clock.get_time() + MAX_TIME):
+    #         item = self.consumables.pop(0)
+    #         label = Label(text='%s' % item)
+    #         self.root.ids.target.add_widget(label)
 
 if __name__ == '__main__':
     PianoApp().run()
