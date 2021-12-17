@@ -56,8 +56,6 @@ class Piano(Widget):
     keys = list()
     msglog = deque()
     echo_delay = 2
-    loaded = False
-    twice = False
 
     for inp in mido.get_input_names():
         if "Roland Digital Piano" in inp:
@@ -67,8 +65,8 @@ class Piano(Widget):
         if "Roland Digital Piano" in outp:
             outport = mido.open_output(outp)
 
-    def playSong(self, song):
-        for msg in mido.MidiFile(song).play():
+    def playSong(self):
+        for msg in mido.MidiFile(self.searchSongInDir("a million dreams")).play():
             if not msg.is_meta:
                 if msg.type == "note_on":
                     # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
@@ -79,7 +77,6 @@ class Piano(Widget):
                     self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
                     self.keys[msg.note-21].update()
             self.outport.send(msg)
-        # App.get_running_app().consumables.append("done")
 
     def searchSongInDir(self, name, dir="/home/haywire/midi/"):
         songs = self.ListSongsInDir(dir)
@@ -134,41 +131,38 @@ class Piano(Widget):
                 self.keys.append(BlackKey(pos=(offset+139,50)))
 
     def update(self, dt):
-        # msg = self.inport.receive()
-        # if msg.type != "clock":
-        #     self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
-        #     if msg.type == "note_on":
-        #         # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-        #         self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
-        #         self.keys[msg.note-21].update()
-        #     if msg.type == "note_off":
-        #         # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-        #         self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-        #         self.keys[msg.note-21].update()
-        if self.loaded:
-            self.playSong(self.searchSongInDir("galop"))
-        else:
-            if self.twice:
-                self.loaded = True
-            else:
-                self.twice = True
+        pass
+
+    def startListen(self, dt):
+        Thread(target=self.listen).start()
+
+    def listen(self):
+        msg = self.inport.receive()
+        if msg.type != "clock":
+            self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
+            if msg.type == "note_on":
+                # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
+                self.keys[msg.note-21].update()
+            if msg.type == "note_off":
+                # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                self.keys[msg.note-21].update()
+        self.listen()
+
+    def tick(self, dt):
+        Thread(target=self.playSong).start()
 
 class PianoApp(App):
-    # consumables = ListProperty([])
 
     def build(self):
         game = Piano()
         game.setupPiano()
 
         Clock.schedule_interval(game.update, 0)
-        # Clock.schedule_interval(self.consume, 0)
+        Clock.schedule_once(game.tick)
+        Clock.schedule_once(game.startListen)
         return game
-
-    # def consume(self, *args):
-    #     while self.consumables and time() < (Clock.get_time() + MAX_TIME):
-    #         item = self.consumables.pop(0)
-    #         label = Label(text='%s' % item)
-    #         self.root.ids.target.add_widget(label)
 
 if __name__ == '__main__':
     PianoApp().run()
