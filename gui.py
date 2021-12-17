@@ -7,6 +7,7 @@ from kivy.vector import Vector
 from kivy.clock import Clock
 from random import randint
 from kivy.graphics import Rectangle, Color
+from kivy.core.window import Window
 
 #midi integration
 import mido
@@ -19,10 +20,6 @@ import time
 from threading import Thread
 
 from kivy.uix.boxlayout import BoxLayout
-
-from kivy.config import Config
-Config.set('graphics', 'width', '1248')
-Config.set('graphics', 'height', '500')
 
 class WhiteKey(Widget):
     def __init__(self, **kwargs):
@@ -156,13 +153,22 @@ class Piano(Widget):
 class PianoApp(App):
 
     def build(self):
-        game = Piano()
-        game.setupPiano()
+        self.game = Piano()
+        self.game.setupPiano()
 
-        Clock.schedule_interval(game.update, 0)
-        Clock.schedule_once(game.tick)
-        Clock.schedule_once(game.startListen)
-        return game
+        Window.size = (1248, 500)
+        Window.bind(on_request_close=self.on_request_close)
+
+        Clock.schedule_interval(self.game.update, 0)
+        Clock.schedule_once(self.game.tick)
+        Clock.schedule_once(self.game.startListen)
+        return self.game
+
+    def on_request_close(self, *args):
+        # Thread.interrupt_main()
+        self.game.outport.panic()
+        os._exit(1)
+        return True
 
 if __name__ == '__main__':
     PianoApp().run()
