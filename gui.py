@@ -7,6 +7,7 @@ from kivy.vector import Vector
 from kivy.clock import Clock
 from random import randint
 from kivy.graphics import Rectangle, Color
+from kivy.core.window import Window
 
 #midi integration
 import mido
@@ -16,12 +17,9 @@ import os
 import random
 
 import time
+from threading import Thread
 
 from kivy.uix.boxlayout import BoxLayout
-
-from kivy.config import Config
-Config.set('graphics', 'width', '1248')
-Config.set('graphics', 'height', '500')
 
 class WhiteKey(Widget):
     def __init__(self, **kwargs):
@@ -55,8 +53,6 @@ class Piano(Widget):
     keys = list()
     msglog = deque()
     echo_delay = 2
-    loaded = False
-    songQueue = list()
 
     for inp in mido.get_input_names():
         if "Roland Digital Piano" in inp:
@@ -66,8 +62,18 @@ class Piano(Widget):
         if "Roland Digital Piano" in outp:
             outport = mido.open_output(outp)
 
-    def playSong(self, song):
-        self.songQueue = list(mido.MidiFile(song))
+    def playSong(self):
+        for msg in mido.MidiFile(self.searchSongInDir("a million dreams")).play():
+            if not msg.is_meta:
+                if msg.type == "note_on":
+                    # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
+                    self.keys[msg.note-21].update()
+                if msg.type == "note_off":
+                    # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                    self.keys[msg.note-21].update()
+            self.outport.send(msg)
 
     def searchSongInDir(self, name, dir="/home/haywire/midi/"):
         songs = self.ListSongsInDir(dir)
@@ -121,46 +127,48 @@ class Piano(Widget):
             if i == 5:
                 self.keys.append(BlackKey(pos=(offset+139,50)))
 
-
     def update(self, dt):
-        # msg = self.inport.receive()
-        # if msg.type != "clock":
-        #     self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
-        #     if msg.type == "note_on":
-        #         # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-        #         self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
-        #         self.keys[msg.note-21].update()
-        #     if msg.type == "note_off":
-        #         # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-        #         self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-        #         self.keys[msg.note-21].update()
-        if self.loaded:
-            if not self.songQueue:
-                self.playSong(self.searchSongInDir("galop"))
-            else:
-                msg = self.songQueue.pop(0)
-                time.sleep(msg.time)
-                if not msg.is_meta:
-                    if msg.type == "note_on":
-                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
-                        self.keys[msg.note-21].update()
-                    if msg.type == "note_off":
-                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                        self.keys[msg.note-21].update()
-                    self.outport.send(msg)
-        else:
-            self.loaded = True
+        pass
 
+    def startListen(self, dt):
+        Thread(target=self.listen).start()
+
+    def listen(self):
+        msg = self.inport.receive()
+        if msg.type != "clock":
+            self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
+            if msg.type == "note_on":
+                # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
+                self.keys[msg.note-21].update()
+            if msg.type == "note_off":
+                # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                self.keys[msg.note-21].update()
+        self.listen()
+
+    def tick(self, dt):
+        Thread(target=self.playSong).start()
 
 class PianoApp(App):
-    def build(self):
-        game = Piano()
-        game.setupPiano()
-        Clock.schedule_interval(game.update, 1.0/200.0)
-        return game
 
+    def build(self):
+        self.game = Piano()
+        self.game.setupPiano()
+
+        Window.size = (1248, 500)
+        Window.bind(on_request_close=self.on_request_close)
+
+        Clock.schedule_interval(self.game.update, 0)
+        Clock.schedule_once(self.game.tick)
+        Clock.schedule_once(self.game.startListen)
+        return self.game
+
+    def on_request_close(self, *args):
+        # Thread.interrupt_main()
+        self.game.outport.panic()
+        os._exit(1)
+        return True
 
 if __name__ == '__main__':
     PianoApp().run()
