@@ -8,18 +8,18 @@ from kivy.clock import Clock
 from random import randint
 from kivy.graphics import Rectangle, Color
 from kivy.core.window import Window
+from kivy.uix.dropdown import DropDown
+from kivy.uix.popup import Popup
+from kivy.uix.button import Button
+from kivy.base import runTouchApp
+from kivy.uix.boxlayout import BoxLayout
 
-#midi integration
 import mido
 import time
 from collections import deque
 import os
 import random
-
-import time
 from threading import Thread
-
-from kivy.uix.boxlayout import BoxLayout
 
 class WhiteKey(Widget):
     def __init__(self, **kwargs):
@@ -49,21 +49,23 @@ class BlackKey(Widget):
             Color(*self.col)
             Rectangle(pos=self.pos,size=(12,100))
 
+# class midiInportDropdown(Widget):
+#     def __init__(self, **kwargs):
+#         super(midiInportDropdown, self).__init__(**kwargs)
+#         with self.canvas:
+#             Color(1,1,1,1)
+#             Rectangle(pos=()),size=(12,100))
+
 class Piano(Widget):
     keys = list()
     msglog = deque()
     echo_delay = 2
 
-    for inp in mido.get_input_names():
-        if "Roland Digital Piano" in inp:
-            inport = mido.open_input(inp)
+    midiInportDropdown = DropDown()
+    midiOutportDropdown = DropDown()
 
-    for outp in mido.get_output_names():
-        if "Roland Digital Piano" in outp:
-            outport = mido.open_output(outp)
-
-    def playSong(self):
-        for msg in mido.MidiFile(self.searchSongInDir("a million dreams")).play():
+    def playSong(self, song):
+        for msg in mido.MidiFile(song).play():
             if not msg.is_meta:
                 if msg.type == "note_on":
                     # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
@@ -74,6 +76,22 @@ class Piano(Widget):
                     self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
                     self.keys[msg.note-21].update()
             self.outport.send(msg)
+
+    def playAllSongsIn(self, dir="/home/haywire/midi/", shuffle=True):
+        songs = self.ListSongsInDir(dir)
+
+        if shuffle:
+            random.shuffle(songs)
+        for song in songs:
+            print(f"Now playing: {song.replace('.mid','')}")
+            try:
+                self.playSong(os.path.join(dir, song))
+            except:
+                pass
+            for key in self.keys:
+                if key.col != key.originalCol:
+                    key.col = key.originalCol
+                key.update()
 
     def searchSongInDir(self, name, dir="/home/haywire/midi/"):
         songs = self.ListSongsInDir(dir)
@@ -91,6 +109,42 @@ class Piano(Widget):
         return songs
 
     def setupPiano(self):
+        for inp in mido.get_input_names():
+            btn = Button(text = inp, size_hint_y = None, height = 30)
+            btn.bind(on_release = lambda btn: (
+            setattr(self, "inport", mido.open_input(btn.text)),
+            Clock.schedule_once(self.startListen),
+            self.midiInportDropdown.dismiss()
+            ))
+            self.midiInportDropdown.add_widget(btn)
+
+        for outp in mido.get_output_names():
+            btn = Button(text = inp, size_hint_y = None, height = 30)
+            btn.bind(on_release = lambda btn: (
+            setattr(self, "outport", mido.open_output(btn.text)),
+            Clock.schedule_once(self.startPlayback),
+            self.midiOutportDropdown.dismiss()
+            ))
+            self.midiOutportDropdown.add_widget(btn)
+
+        midiInportDropdownButton = Button(text ='Midi inport',
+        size_hint =(0.5, 0.2),
+        pos_hint={'right': .9, 'top': 1})
+        midiInportDropdownButton.bind(on_release = self.midiInportDropdown.open)
+
+        midiOutportDropdownButton = Button(text ='Midi outport',
+        size_hint =(0.5, 0.2),
+        pos_hint={'right': .9, 'top': 1})
+        midiOutportDropdownButton.bind(on_release = self.midiOutportDropdown.open)
+
+        layout = BoxLayout(orientation='vertical')
+        layout.add_widget(midiInportDropdownButton)
+        layout.add_widget(midiOutportDropdownButton)
+        self.settings_popup = Popup(content=layout,
+                                    title='Settings',
+                                    size_hint=(0.8, 0.5),
+                                    pos_hint={'right': .9, 'top': 1})
+
         #First 3 notes of the piano on the left
         self.keys.append(WhiteKey(pos=(0,0)))
         self.keys.append(BlackKey(pos=(20,50)))
@@ -110,6 +164,8 @@ class Piano(Widget):
         for key in self.keys:
             if isinstance(key, BlackKey):
                 self.canvas.add(key.canvas)
+
+        self.settings_popup.open()
 
     def drawOctave(self, nr):
         offset = 48+(nr*168)
@@ -147,8 +203,8 @@ class Piano(Widget):
                 self.keys[msg.note-21].update()
         self.listen()
 
-    def tick(self, dt):
-        Thread(target=self.playSong).start()
+    def startPlayback(self, dt):
+        Thread(target=self.playAllSongsIn).start()
 
 class PianoApp(App):
 
@@ -157,16 +213,18 @@ class PianoApp(App):
         self.game.setupPiano()
 
         Window.size = (1248, 500)
+        Window.clearcolor = (0.22, 0.22, 0.22, 1)
         Window.bind(on_request_close=self.on_request_close)
 
         Clock.schedule_interval(self.game.update, 0)
-        Clock.schedule_once(self.game.tick)
-        Clock.schedule_once(self.game.startListen)
         return self.game
 
     def on_request_close(self, *args):
         # Thread.interrupt_main()
-        self.game.outport.panic()
+        try:
+            self.game.outport.panic()
+        except:
+            pass
         os._exit(1)
         return True
 
