@@ -23,6 +23,7 @@ import random
 from threading import Thread
 import threading
 from functools import partial
+import pickle
 
 class StoppableThread(Thread):
     """Thread class with a stop() method. The thread itself has to check
@@ -72,6 +73,7 @@ class Piano(Widget):
     echo_delay = 2
     skipSong = False
     autocancel = None
+    preferences = dict()
 
     midiInportDropdown = DropDown()
     midiOutportDropdown = DropDown()
@@ -148,11 +150,14 @@ class Piano(Widget):
         return songs
 
     def setupPiano(self):
+        self.loadPreferences()
+
         for inp in list(dict.fromkeys(mido.get_input_names())):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "inport", mido.open_input(btn.text)),
             Clock.schedule_once(self.startListen),
+            self.updatePreferences("inport", btn.text),
             self.midiInportDropdown.dismiss()
             ))
             self.midiInportDropdown.add_widget(btn)
@@ -161,6 +166,7 @@ class Piano(Widget):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "outport", mido.open_output(btn.text)),
+            self.updatePreferences("outport", btn.text),
             self.midiOutportDropdown.dismiss()
             ))
             self.midiOutportDropdown.add_widget(btn)
@@ -199,6 +205,12 @@ class Piano(Widget):
 
         layout.add_widget(btnStopPlayback)
 
+        btnSave = Button(text='Save preferences')
+        btnSave.bind(
+            on_release = self.savePreferences)
+
+        layout.add_widget(btnSave)
+
         self.settings_popup = Popup(content=layout,
                                     title='Settings',
                                     size_hint=(0.8, 0.5),
@@ -225,6 +237,32 @@ class Piano(Widget):
                 self.canvas.add(key.canvas)
 
         self.settings_popup.open()
+
+    def savePreferences(self, e):
+        f = open("preferences.pkl", "wb")
+        pickle.dump(self.preferences, f)
+        f.close()
+
+    def loadPreferences(self):
+        try:
+            f = open("preferences.pkl", "rb")
+            self.preferences = pickle.load(f)
+            f.close()
+            for full in list(dict.fromkeys(mido.get_input_names())):
+                if " ".join(self.preferences['inport'].split(" ")[0:2]) in full:
+                    self.inport = mido.open_input(full)
+                    Clock.schedule_once(self.startListen)
+
+            for full in list(dict.fromkeys(mido.get_output_names())):
+                if " ".join(self.preferences['outport'].split(" ")[0:2]) in full:
+                    self.outport = mido.open_output(full)
+
+            self.outport = mido.open_output(self.preferences['outport'])
+        except Exception as e:
+            print(e)
+
+    def updatePreferences(self, key, value):
+        self.preferences[key] = value
 
     def drawOctave(self, nr):
         offset = 48+(nr*168)
