@@ -12,4 +12,4 @@ A midi synth written in python. PLease note that at this stage it is a proof of 
 Known issues:
 - See Issues tab
 - Won't fix:
-- - Some midi songs sound bad. This is because they change the pitch of the notes while playing on the wrong notes. This program will reset those songs, reverting them to their original sound, which is not correct and sounds bad. I won't fix this because it's an issue with the midi file and not the program. If you want to fix it, just clear the 2 lines below the comment: CLEAR THIS IF MIDI SOUNDS BAD. Another way to fix this is to import into musescore, select piano as instrument and export as midi again.
+  - Some midi songs sound bad. This is because they change the pitch of the notes while playing on the wrong notes. This program will reset those songs, reverting them to their original sound, which is not correct and sounds bad. I won't fix this because it's an issue with the midi file and not the program. If you want to fix it, just clear the 2 lines below the comment: CLEAR THIS IF MIDI SOUNDS BAD. Another way to fix this is to import into musescore, select piano as instrument and export as midi again.
