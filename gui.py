@@ -14,6 +14,9 @@ from kivy.uix.button import Button
 from kivy.base import runTouchApp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
+from kivy.uix.floatlayout import FloatLayout
+from kivy.config import Config
+Config.set('kivy', 'exit_on_escape', '0')
 
 import mido
 import time
@@ -249,6 +252,16 @@ class Piano(Widget):
             if isinstance(key, BlackKey):
                 self.canvas.add(key.canvas)
 
+        settingsLayout = FloatLayout(size=(1248,500))
+
+        btnSettings = Button(text='Open settings',
+        size_hint=(0.1, 0.1),
+        pos_hint={'left': .9, 'top': 1})
+        btnSettings.bind(on_release = self.settings_popup.open)
+
+        settingsLayout.add_widget(btnSettings)
+        self.add_widget(settingsLayout)
+
         self.settings_popup.open()
 
     def savePreferences(self, e):
@@ -351,9 +364,14 @@ class PianoApp(App):
         Window.size = (1248, 500)
         Window.clearcolor = (0.22, 0.22, 0.22, 1)
         Window.bind(on_request_close=self.on_request_close)
+        Window.bind(on_key_down=self.key_action)
 
         Clock.schedule_interval(self.game.update, 0)
         return self.game
+
+    def key_action(self, window, keycode, *args):
+        pass
+        # print("got a key event: %s" % list(args))
 
     def on_request_close(self, *args):
         try:
