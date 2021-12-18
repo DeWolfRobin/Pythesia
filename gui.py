@@ -77,6 +77,7 @@ class Piano(Widget):
     skipSong = False
     autocancel = None
     preferences = dict()
+    graphicsQueue = list()
 
     midiInportDropdown = DropDown()
     midiOutportDropdown = DropDown()
@@ -94,20 +95,36 @@ class Piano(Widget):
         for msg in mido.MidiFile(song).play():
             if (not threading.currentThread().stopped()) and (not self.skipSong):
                 if not msg.is_meta:
+                    self.outport.send(msg)
+
+                    # try to move this to seperate thread as well, might not be good tho
                     if msg.type == "note_on":
                         if msg.velocity != 0:
-                            self.keys[msg.note-21].col = (0,msg.velocity/127,0)
-                            self.keys[msg.note-21].update()
+                            self.graphicsQueue.append({
+                                "action": "highlight",
+                                "msg": msg
+                                })
                         else:
-                            self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                            self.keys[msg.note-21].update()
+                            self.graphicsQueue.append({
+                                "action": "clear",
+                                "msg": msg
+                                })
                     if msg.type == "note_off":
-                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                        self.keys[msg.note-21].update()
-                    self.outport.send(msg)
+                        self.graphicsQueue.append({
+                            "action": "clear",
+                            "msg": msg
+                            })
             else:
                 self.skipSong = False
                 break
+
+    def highlightKey(self, msg):
+        self.keys[msg.note-21].col = (0,msg.velocity/127,0)
+        self.keys[msg.note-21].update()
+
+    def clearKey(self, msg):
+        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+        self.keys[msg.note-21].update()
 
     def skipSongFunc(self, dt):
         skipSong = True
@@ -307,7 +324,12 @@ class Piano(Widget):
                 self.keys.append(BlackKey(pos=(offset+139,50)))
 
     def update(self, dt):
-        pass
+        for i,e in enumerate(self.graphicsQueue):
+            if e["action"] == "highlight":
+                self.highlightKey(e["msg"])
+            else:
+                self.clearKey(e["msg"])
+            self.graphicsQueue.pop(i)
 
     def startListen(self, dt):
         newThread = StoppableThread(target=self.listen)
@@ -366,7 +388,7 @@ class PianoApp(App):
         Window.bind(on_request_close=self.on_request_close)
         Window.bind(on_key_down=self.key_action)
 
-        Clock.schedule_interval(self.game.update, 0)
+        Clock.schedule_interval(self.game.update, 1.0/60.0)
         return self.game
 
     def key_action(self, window, keycode, *args):
