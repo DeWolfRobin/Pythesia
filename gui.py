@@ -81,8 +81,6 @@ class Piano(Widget):
     activeOutputThreads = list()
     allActiveThreads = list()
 
-    dir = "/home/haywire/midi/"
-
     def playSong(self, song):
         self.outport.panic()
 
@@ -112,7 +110,7 @@ class Piano(Widget):
         skipSong = True
 
     def playAllSongsIn(self, shuffle=True):
-        songs = self.ListSongsInDir(self.dir)
+        songs = self.ListSongsInDir(self.preferences["dir"])
 
         if shuffle:
             random.shuffle(songs)
@@ -120,7 +118,7 @@ class Piano(Widget):
             if not threading.currentThread().stopped():
                 print(f"Now playing: {song.replace('.mid','')}")
                 try:
-                    self.playSong(os.path.join(self.dir, song))
+                    self.playSong(os.path.join(self.preferences["dir"], song))
                 except Exception as e:
                     print(e)
                     pass
@@ -135,10 +133,10 @@ class Piano(Widget):
             key.update()
 
     def searchSongInDir(self, name):
-        songs = self.ListSongsInDir(self.dir)
+        songs = self.ListSongsInDir(self.preferences["dir"])
         matching = [s for s in songs if name.lower() in s.lower()]
         for song in matching:
-            return os.path.join(self.dir, song)
+            return os.path.join(self.preferences["dir"], song)
 
     def ListSongsInDir(self, dir):
         songs = list()
@@ -151,6 +149,9 @@ class Piano(Widget):
 
     def setupPiano(self):
         self.loadPreferences()
+
+        if "dir" not in self.preferences:
+            self.preferences["dir"] = "/home/haywire/midi/"
 
         for inp in list(dict.fromkeys(mido.get_input_names())):
             btn = Button(text = inp, size_hint_y = None, height = 30)
@@ -191,6 +192,18 @@ class Piano(Widget):
         songSelection.add_widget(btnstartPlaybackSong)
 
         layout.add_widget(songSelection)
+
+        dirSelection = BoxLayout(orientation='horizontal')
+
+        selectedDir = TextInput(text=self.preferences["dir"], multiline=False)
+        btnSetDir = Button(text='Set dir')
+        btnSetDir.bind(on_release = lambda btn: (
+        self.updatePreferences("dir", selectedDir.text),
+        ))
+        dirSelection.add_widget(selectedDir)
+        dirSelection.add_widget(btnSetDir)
+
+        layout.add_widget(dirSelection)
 
         btnstartPlaybackAllSongs = Button(text='Start random songs')
         # BUG: When no output is selected, nothing works yet, can be fixed with except: show error and don't play on outport
