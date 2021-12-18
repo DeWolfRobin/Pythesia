@@ -13,6 +13,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.button import Button
 from kivy.base import runTouchApp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
 
 import mido
 import time
@@ -20,6 +21,21 @@ from collections import deque
 import os
 import random
 from threading import Thread
+import threading
+
+class StoppableThread(Thread):
+    """Thread class with a stop() method. The thread itself has to check
+    regularly for the stopped() condition."""
+
+    def __init__(self,  *args, **kwargs):
+        super(StoppableThread, self).__init__(*args, **kwargs)
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
 
 class WhiteKey(Widget):
     def __init__(self, **kwargs):
@@ -49,13 +65,6 @@ class BlackKey(Widget):
             Color(*self.col)
             Rectangle(pos=self.pos,size=(12,100))
 
-# class midiInportDropdown(Widget):
-#     def __init__(self, **kwargs):
-#         super(midiInportDropdown, self).__init__(**kwargs)
-#         with self.canvas:
-#             Color(1,1,1,1)
-#             Rectangle(pos=()),size=(12,100))
-
 class Piano(Widget):
     keys = list()
     msglog = deque()
@@ -64,18 +73,24 @@ class Piano(Widget):
     midiInportDropdown = DropDown()
     midiOutportDropdown = DropDown()
 
+    activeOutputThreads = list()
+    allActiveThreads = list()
+
     def playSong(self, song):
         for msg in mido.MidiFile(song).play():
-            if not msg.is_meta:
-                if msg.type == "note_on":
-                    # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                    self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
-                    self.keys[msg.note-21].update()
-                if msg.type == "note_off":
-                    # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                    self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                    self.keys[msg.note-21].update()
-            self.outport.send(msg)
+            if not threading.currentThread().stopped():
+                if not msg.is_meta:
+                    if msg.type == "note_on":
+                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                        self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
+                        self.keys[msg.note-21].update()
+                    if msg.type == "note_off":
+                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                        self.keys[msg.note-21].update()
+                self.outport.send(msg)
+            else:
+                break
 
     def playAllSongsIn(self, dir="/home/haywire/midi/", shuffle=True):
         songs = self.ListSongsInDir(dir)
@@ -83,15 +98,21 @@ class Piano(Widget):
         if shuffle:
             random.shuffle(songs)
         for song in songs:
-            print(f"Now playing: {song.replace('.mid','')}")
-            try:
-                self.playSong(os.path.join(dir, song))
-            except:
-                pass
-            for key in self.keys:
-                if key.col != key.originalCol:
-                    key.col = key.originalCol
-                key.update()
+            if not threading.currentThread().stopped():
+                print(f"Now playing: {song.replace('.mid','')}")
+                try:
+                    self.playSong(os.path.join(dir, song))
+                except:
+                    pass
+                    self.clearKeys()
+            else:
+                break
+
+    def clearKeys(self):
+        for key in self.keys:
+            if key.col != key.originalCol:
+                key.col = key.originalCol
+            key.update()
 
     def searchSongInDir(self, name, dir="/home/haywire/midi/"):
         songs = self.ListSongsInDir(dir)
@@ -109,7 +130,7 @@ class Piano(Widget):
         return songs
 
     def setupPiano(self):
-        for inp in mido.get_input_names():
+        for inp in list(dict.fromkeys(mido.get_input_names())):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "inport", mido.open_input(btn.text)),
@@ -118,28 +139,48 @@ class Piano(Widget):
             ))
             self.midiInportDropdown.add_widget(btn)
 
-        for outp in mido.get_output_names():
+        for outp in list(dict.fromkeys(mido.get_output_names())):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "outport", mido.open_output(btn.text)),
-            Clock.schedule_once(self.startPlayback),
             self.midiOutportDropdown.dismiss()
             ))
             self.midiOutportDropdown.add_widget(btn)
 
-        midiInportDropdownButton = Button(text ='Midi inport',
-        size_hint =(0.5, 0.2),
-        pos_hint={'right': .9, 'top': 1})
+        midiInportDropdownButton = Button(text ='Midi inport')
         midiInportDropdownButton.bind(on_release = self.midiInportDropdown.open)
 
-        midiOutportDropdownButton = Button(text ='Midi outport',
-        size_hint =(0.5, 0.2),
-        pos_hint={'right': .9, 'top': 1})
+        midiOutportDropdownButton = Button(text ='Midi outport')
         midiOutportDropdownButton.bind(on_release = self.midiOutportDropdown.open)
 
         layout = BoxLayout(orientation='vertical')
+        songSelection = BoxLayout(orientation='horizontal')
         layout.add_widget(midiInportDropdownButton)
         layout.add_widget(midiOutportDropdownButton)
+
+        selectedSong = TextInput(text='Song...', multiline=False)
+        btnstartPlaybackSong = Button(text='Start song')
+        # BUG: When no output is selected, nothing works yet, can be fixed with except: show error and don't play on outport
+        btnstartPlaybackSong.bind(
+            on_release = lambda btn: self.startPlayback(selectedSong.text))
+        songSelection.add_widget(selectedSong)
+        songSelection.add_widget(btnstartPlaybackSong)
+
+        layout.add_widget(songSelection)
+
+        btnstartPlaybackAllSongs = Button(text='Start random songs')
+        # BUG: When no output is selected, nothing works yet, can be fixed with except: show error and don't play on outport
+        btnstartPlaybackAllSongs.bind(
+            on_release = self.startPlaybackAllSongs)
+
+        layout.add_widget(btnstartPlaybackAllSongs)
+
+        btnStopPlayback = Button(text='Stop songs')
+        btnStopPlayback.bind(
+            on_release = self.stopAllThreads)
+
+        layout.add_widget(btnStopPlayback)
+
         self.settings_popup = Popup(content=layout,
                                     title='Settings',
                                     size_hint=(0.8, 0.5),
@@ -187,24 +228,45 @@ class Piano(Widget):
         pass
 
     def startListen(self, dt):
-        Thread(target=self.listen).start()
+        newThread = StoppableThread(target=self.listen)
+        self.allActiveThreads.append(newThread)
+        newThread.start()
+
+    def stopAllThreads(self, e):
+        for t in self.allActiveThreads:
+            t.stop()
+        self.allActiveThreads.clear()
+        self.activeOutputThreads.clear()
+        self.clearKeys()
 
     def listen(self):
-        msg = self.inport.receive()
-        if msg.type != "clock":
-            self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
-            if msg.type == "note_on":
-                # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
-                self.keys[msg.note-21].update()
-            if msg.type == "note_off":
-                # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                self.keys[msg.note-21].update()
-        self.listen()
+        if not threading.currentThread().stopped():
+            msg = self.inport.receive()
+            if msg.type != "clock":
+                self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
+                if msg.type == "note_on":
+                    # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
+                    self.keys[msg.note-21].update()
+                if msg.type == "note_off":
+                    # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                    self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                    self.keys[msg.note-21].update()
+            self.listen()
 
-    def startPlayback(self, dt):
-        Thread(target=self.playAllSongsIn).start()
+    def startPlaybackAllSongs(self, dt):
+        if not self.activeOutputThreads:
+            newThread = StoppableThread(target=self.playAllSongsIn)
+            self.activeOutputThreads.append(newThread)
+            self.allActiveThreads.append(newThread)
+            newThread.start()
+
+    def startPlayback(self, song):
+        if not self.activeOutputThreads:
+            newThread = StoppableThread(target=self.playSong, args=(self.searchSongInDir(song),))
+            self.activeOutputThreads.append(newThread)
+            self.allActiveThreads.append(newThread)
+            newThread.start()
 
 class PianoApp(App):
 
@@ -220,7 +282,6 @@ class PianoApp(App):
         return self.game
 
     def on_request_close(self, *args):
-        # Thread.interrupt_main()
         try:
             self.game.outport.panic()
         except:
