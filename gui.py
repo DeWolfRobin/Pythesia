@@ -23,6 +23,7 @@ import random
 from threading import Thread
 import threading
 from functools import partial
+import pickle
 
 class StoppableThread(Thread):
     """Thread class with a stop() method. The thread itself has to check
@@ -72,6 +73,7 @@ class Piano(Widget):
     echo_delay = 2
     skipSong = False
     autocancel = None
+    preferences = dict()
 
     midiInportDropdown = DropDown()
     midiOutportDropdown = DropDown()
@@ -79,13 +81,12 @@ class Piano(Widget):
     activeOutputThreads = list()
     allActiveThreads = list()
 
-    dir = "/home/haywire/midi/"
-
     def playSong(self, song):
         self.outport.panic()
-        with open("clear.mid") as file:
-            while (line := file.readline().rstrip()):
-                self.outport.send(mido.Message.from_hex(line))
+
+        #clear midi channels. CLEAR THIS IF MIDI SOUNDS BAD
+        for i in ["B0 79 00","B0 64 00","B0 65 00","B0 06 0C","B0 64 7F","B0 65 7F","C0 00","B0 07 64","B0 0A 40","B0 5B 00","B0 5D 00"]:
+            self.outport.send(mido.Message.from_hex(f"{i}"))
         self.autocancel = Clock.schedule_once(self.skipSongFunc,mido.MidiFile(song).length+5)
         for msg in mido.MidiFile(song).play():
             if (not threading.currentThread().stopped()) and (not self.skipSong):
@@ -109,7 +110,7 @@ class Piano(Widget):
         skipSong = True
 
     def playAllSongsIn(self, shuffle=True):
-        songs = self.ListSongsInDir(self.dir)
+        songs = self.ListSongsInDir(self.preferences["dir"])
 
         if shuffle:
             random.shuffle(songs)
@@ -117,7 +118,7 @@ class Piano(Widget):
             if not threading.currentThread().stopped():
                 print(f"Now playing: {song.replace('.mid','')}")
                 try:
-                    self.playSong(os.path.join(self.dir, song))
+                    self.playSong(os.path.join(self.preferences["dir"], song))
                 except Exception as e:
                     print(e)
                     pass
@@ -132,10 +133,10 @@ class Piano(Widget):
             key.update()
 
     def searchSongInDir(self, name):
-        songs = self.ListSongsInDir(self.dir)
+        songs = self.ListSongsInDir(self.preferences["dir"])
         matching = [s for s in songs if name.lower() in s.lower()]
         for song in matching:
-            return os.path.join(self.dir, song)
+            return os.path.join(self.preferences["dir"], song)
 
     def ListSongsInDir(self, dir):
         songs = list()
@@ -147,11 +148,17 @@ class Piano(Widget):
         return songs
 
     def setupPiano(self):
+        self.loadPreferences()
+
+        if "dir" not in self.preferences:
+            self.preferences["dir"] = "/home/haywire/midi/"
+
         for inp in list(dict.fromkeys(mido.get_input_names())):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "inport", mido.open_input(btn.text)),
             Clock.schedule_once(self.startListen),
+            self.updatePreferences("inport", btn.text),
             self.midiInportDropdown.dismiss()
             ))
             self.midiInportDropdown.add_widget(btn)
@@ -160,6 +167,7 @@ class Piano(Widget):
             btn = Button(text = inp, size_hint_y = None, height = 30)
             btn.bind(on_release = lambda btn: (
             setattr(self, "outport", mido.open_output(btn.text)),
+            self.updatePreferences("outport", btn.text),
             self.midiOutportDropdown.dismiss()
             ))
             self.midiOutportDropdown.add_widget(btn)
@@ -185,6 +193,18 @@ class Piano(Widget):
 
         layout.add_widget(songSelection)
 
+        dirSelection = BoxLayout(orientation='horizontal')
+
+        selectedDir = TextInput(text=self.preferences["dir"], multiline=False)
+        btnSetDir = Button(text='Set dir')
+        btnSetDir.bind(on_release = lambda btn: (
+        self.updatePreferences("dir", selectedDir.text),
+        ))
+        dirSelection.add_widget(selectedDir)
+        dirSelection.add_widget(btnSetDir)
+
+        layout.add_widget(dirSelection)
+
         btnstartPlaybackAllSongs = Button(text='Start random songs')
         # BUG: When no output is selected, nothing works yet, can be fixed with except: show error and don't play on outport
         btnstartPlaybackAllSongs.bind(
@@ -197,6 +217,12 @@ class Piano(Widget):
             on_release = self.stopAllThreads)
 
         layout.add_widget(btnStopPlayback)
+
+        btnSave = Button(text='Save preferences')
+        btnSave.bind(
+            on_release = self.savePreferences)
+
+        layout.add_widget(btnSave)
 
         self.settings_popup = Popup(content=layout,
                                     title='Settings',
@@ -224,6 +250,32 @@ class Piano(Widget):
                 self.canvas.add(key.canvas)
 
         self.settings_popup.open()
+
+    def savePreferences(self, e):
+        f = open("preferences.pkl", "wb")
+        pickle.dump(self.preferences, f)
+        f.close()
+
+    def loadPreferences(self):
+        try:
+            f = open("preferences.pkl", "rb")
+            self.preferences = pickle.load(f)
+            f.close()
+            for full in list(dict.fromkeys(mido.get_input_names())):
+                if " ".join(self.preferences['inport'].split(" ")[0:2]) in full:
+                    self.inport = mido.open_input(full)
+                    Clock.schedule_once(self.startListen)
+
+            for full in list(dict.fromkeys(mido.get_output_names())):
+                if " ".join(self.preferences['outport'].split(" ")[0:2]) in full:
+                    self.outport = mido.open_output(full)
+
+            self.outport = mido.open_output(self.preferences['outport'])
+        except Exception as e:
+            print(e)
+
+    def updatePreferences(self, key, value):
+        self.preferences[key] = value
 
     def drawOctave(self, nr):
         offset = 48+(nr*168)
