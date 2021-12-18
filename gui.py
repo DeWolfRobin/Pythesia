@@ -22,6 +22,7 @@ import os
 import random
 from threading import Thread
 import threading
+from functools import partial
 
 class StoppableThread(Thread):
     """Thread class with a stop() method. The thread itself has to check
@@ -69,6 +70,8 @@ class Piano(Widget):
     keys = list()
     msglog = deque()
     echo_delay = 2
+    skipSong = False
+    autocancel = None
 
     midiInportDropdown = DropDown()
     midiOutportDropdown = DropDown()
@@ -76,24 +79,37 @@ class Piano(Widget):
     activeOutputThreads = list()
     allActiveThreads = list()
 
+    dir = "/home/haywire/midi/"
+
     def playSong(self, song):
+        self.outport.panic()
+        with open("clear.mid") as file:
+            while (line := file.readline().rstrip()):
+                self.outport.send(mido.Message.from_hex(line))
+        self.autocancel = Clock.schedule_once(self.skipSongFunc,mido.MidiFile(song).length+5)
         for msg in mido.MidiFile(song).play():
-            if not threading.currentThread().stopped():
+            if (not threading.currentThread().stopped()) and (not self.skipSong):
                 if not msg.is_meta:
                     if msg.type == "note_on":
-                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = (0,(msg.velocity/127),0)
-                        self.keys[msg.note-21].update()
+                        if msg.velocity != 0:
+                            self.keys[msg.note-21].col = (0,msg.velocity/127,0)
+                            self.keys[msg.note-21].update()
+                        else:
+                            self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                            self.keys[msg.note-21].update()
                     if msg.type == "note_off":
-                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
                         self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
                         self.keys[msg.note-21].update()
-                self.outport.send(msg)
+                    self.outport.send(msg)
             else:
+                self.skipSong = False
                 break
 
-    def playAllSongsIn(self, dir="/home/haywire/midi/", shuffle=True):
-        songs = self.ListSongsInDir(dir)
+    def skipSongFunc(self, dt):
+        skipSong = True
+
+    def playAllSongsIn(self, shuffle=True):
+        songs = self.ListSongsInDir(self.dir)
 
         if shuffle:
             random.shuffle(songs)
@@ -101,8 +117,9 @@ class Piano(Widget):
             if not threading.currentThread().stopped():
                 print(f"Now playing: {song.replace('.mid','')}")
                 try:
-                    self.playSong(os.path.join(dir, song))
-                except:
+                    self.playSong(os.path.join(self.dir, song))
+                except Exception as e:
+                    print(e)
                     pass
                     self.clearKeys()
             else:
@@ -114,11 +131,11 @@ class Piano(Widget):
                 key.col = key.originalCol
             key.update()
 
-    def searchSongInDir(self, name, dir="/home/haywire/midi/"):
-        songs = self.ListSongsInDir(dir)
-        matching = [s for s in songs if name in s.lower()]
+    def searchSongInDir(self, name):
+        songs = self.ListSongsInDir(self.dir)
+        matching = [s for s in songs if name.lower() in s.lower()]
         for song in matching:
-            return os.path.join(dir, song)
+            return os.path.join(self.dir, song)
 
     def ListSongsInDir(self, dir):
         songs = list()
@@ -237,6 +254,11 @@ class Piano(Widget):
             t.stop()
         self.allActiveThreads.clear()
         self.activeOutputThreads.clear()
+        self.outport.panic()
+        try:
+            self.autocancel.cancel()
+        except:
+            pass
         self.clearKeys()
 
     def listen(self):
