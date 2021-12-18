@@ -83,9 +83,10 @@ class Piano(Widget):
 
     def playSong(self, song):
         self.outport.panic()
-        with open("clear.mid") as file:
-            while (line := file.readline().rstrip()):
-                self.outport.send(mido.Message.from_hex(line))
+
+        #clear midi channels. CLEAR THIS IF MIDI SOUNDS BAD
+        for i in ["B0 79 00","B0 64 00","B0 65 00","B0 06 0C","B0 64 7F","B0 65 7F","C0 00","B0 07 64","B0 0A 40","B0 5B 00","B0 5D 00"]:
+            self.outport.send(mido.Message.from_hex(f"{i}"))
         self.autocancel = Clock.schedule_once(self.skipSongFunc,mido.MidiFile(song).length+5)
         for msg in mido.MidiFile(song).play():
             if (not threading.currentThread().stopped()) and (not self.skipSong):
