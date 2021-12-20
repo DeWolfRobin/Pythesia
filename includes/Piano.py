@@ -43,8 +43,6 @@ class Piano(Widget):
             if (not currentThread().stopped()) and (not self.skipSong):
                 if not msg.is_meta:
                     self.outport.send(msg)
-
-                    # try to move this to seperate thread as well, might not be good tho
                     if msg.type == "note_on":
                         if msg.velocity != 0:
                             self.graphicsQueue.append({
@@ -116,6 +114,96 @@ class Piano(Widget):
             else:
                 continue
         return songs
+
+    def savePreferences(self, e):
+        f = open("preferences.pkl", "wb")
+        pickle.dump(self.preferences, f)
+        f.close()
+
+    def loadPreferences(self):
+        try:
+            f = open("preferences.pkl", "rb")
+            self.preferences = pickle.load(f)
+            f.close()
+            for full in list(dict.fromkeys(mido.get_input_names())):
+                if " ".join(self.preferences['inport'].split(" ")[0:2]) in full:
+                    self.inport = mido.open_input(full)
+                    Clock.schedule_once(self.startListen)
+
+            for full in list(dict.fromkeys(mido.get_output_names())):
+                if " ".join(self.preferences['outport'].split(" ")[0:2]) in full:
+                    self.outport = mido.open_output(full)
+
+            self.outport = mido.open_output(self.preferences['outport'])
+        except Exception as e:
+            print(e)
+
+    def drawOctave(self, nr):
+        offset = 48+(nr*168)
+
+        for i in range(7):
+            self.keys.append(WhiteKey(pos=(offset+(24*i),0)))
+            if i == 0:
+                self.keys.append(BlackKey(pos=(offset+15,50)))
+            if i == 1:
+                self.keys.append(BlackKey(pos=(offset+44,50)))
+            if i == 3:
+                self.keys.append(BlackKey(pos=(offset+86,50)))
+            if i == 4:
+                self.keys.append(BlackKey(pos=(offset+113,50)))
+            if i == 5:
+                self.keys.append(BlackKey(pos=(offset+139,50)))
+
+    def update(self, dt):
+        for i,e in enumerate(self.graphicsQueue):
+            if e["action"] == "highlight":
+                self.highlightKey(e["msg"])
+            else:
+                self.clearKey(e["msg"])
+            self.graphicsQueue.pop(i)
+
+    def startListen(self, dt):
+        newThread = StoppableThread(target=self.listen)
+        self.allActiveThreads.append(newThread)
+        newThread.start()
+
+    def stopAllThreads(self, e):
+        for t in self.allActiveThreads:
+            t.stop()
+        self.allActiveThreads.clear()
+        self.activeOutputThreads.clear()
+        self.outport.panic()
+        try:
+            self.autocancel.cancel()
+        except:
+            pass
+        self.clearKeys()
+        Clock.schedule_once(self.startListen)
+
+    def listen(self):
+        while True:
+            if not currentThread().stopped():
+                msg = self.inport.receive()
+                if msg.type != "clock":
+                    if msg.type == "note_on":
+                        self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
+                    if msg.type == "note_off":
+                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                    self.keys[msg.note-21].update()
+
+    def startPlaybackAllSongs(self, dt):
+        if not self.activeOutputThreads:
+            newThread = StoppableThread(target=self.playAllSongsIn)
+            self.activeOutputThreads.append(newThread)
+            self.allActiveThreads.append(newThread)
+            newThread.start()
+
+    def startPlayback(self, song):
+        if not self.activeOutputThreads:
+            newThread = StoppableThread(target=self.playSong, args=(self.searchSongInDir(song),))
+            self.activeOutputThreads.append(newThread)
+            self.allActiveThreads.append(newThread)
+            newThread.start()
 
     def setupPiano(self):
         self.loadPreferences()
@@ -236,96 +324,3 @@ class Piano(Widget):
         self.add_widget(settingsLayout)
 
         self.settings_popup.open()
-
-    def savePreferences(self, e):
-        f = open("preferences.pkl", "wb")
-        pickle.dump(self.preferences, f)
-        f.close()
-
-    def loadPreferences(self):
-        try:
-            f = open("preferences.pkl", "rb")
-            self.preferences = pickle.load(f)
-            f.close()
-            for full in list(dict.fromkeys(mido.get_input_names())):
-                if " ".join(self.preferences['inport'].split(" ")[0:2]) in full:
-                    self.inport = mido.open_input(full)
-                    Clock.schedule_once(self.startListen)
-
-            for full in list(dict.fromkeys(mido.get_output_names())):
-                if " ".join(self.preferences['outport'].split(" ")[0:2]) in full:
-                    self.outport = mido.open_output(full)
-
-            self.outport = mido.open_output(self.preferences['outport'])
-        except Exception as e:
-            print(e)
-
-    def drawOctave(self, nr):
-        offset = 48+(nr*168)
-
-        for i in range(7):
-            self.keys.append(WhiteKey(pos=(offset+(24*i),0)))
-            if i == 0:
-                self.keys.append(BlackKey(pos=(offset+15,50)))
-            if i == 1:
-                self.keys.append(BlackKey(pos=(offset+44,50)))
-            if i == 3:
-                self.keys.append(BlackKey(pos=(offset+86,50)))
-            if i == 4:
-                self.keys.append(BlackKey(pos=(offset+113,50)))
-            if i == 5:
-                self.keys.append(BlackKey(pos=(offset+139,50)))
-
-    def update(self, dt):
-        for i,e in enumerate(self.graphicsQueue):
-            if e["action"] == "highlight":
-                self.highlightKey(e["msg"])
-            else:
-                self.clearKey(e["msg"])
-            self.graphicsQueue.pop(i)
-
-    def startListen(self, dt):
-        newThread = StoppableThread(target=self.listen)
-        self.allActiveThreads.append(newThread)
-        newThread.start()
-
-    def stopAllThreads(self, e):
-        for t in self.allActiveThreads:
-            t.stop()
-        self.allActiveThreads.clear()
-        self.activeOutputThreads.clear()
-        self.outport.panic()
-        try:
-            self.autocancel.cancel()
-        except:
-            pass
-        self.clearKeys()
-        Clock.schedule_once(self.startListen)
-
-    def listen(self):
-        while True:
-            if not currentThread().stopped():
-                msg = self.inport.receive()
-                if msg.type != "clock":
-                    if msg.type == "note_on":
-                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
-                        self.keys[msg.note-21].update()
-                    if msg.type == "note_off":
-                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                        self.keys[msg.note-21].update()
-
-    def startPlaybackAllSongs(self, dt):
-        if not self.activeOutputThreads:
-            newThread = StoppableThread(target=self.playAllSongsIn)
-            self.activeOutputThreads.append(newThread)
-            self.allActiveThreads.append(newThread)
-            newThread.start()
-
-    def startPlayback(self, song):
-        if not self.activeOutputThreads:
-            newThread = StoppableThread(target=self.playSong, args=(self.searchSongInDir(song),))
-            self.activeOutputThreads.append(newThread)
-            self.allActiveThreads.append(newThread)
-            newThread.start()
