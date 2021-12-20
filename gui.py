@@ -47,7 +47,6 @@ class WhiteKey(Widget):
         super(WhiteKey, self).__init__(**kwargs)
         self.col = (1,1,1,1)
         self.originalCol = self.col
-        self.pos = kwargs.get("pos")
         with self.canvas:
             self._color = Color(*self.col)
             self._rect = Rectangle(pos=self.pos,size=(23,150))
@@ -59,7 +58,6 @@ class BlackKey(Widget):
         super(BlackKey, self).__init__(**kwargs)
         self.col = (0,0,0,1)
         self.originalCol = self.col
-        self.pos = kwargs.get("pos")
         with self.canvas:
             self._color = Color(*self.col)
             self._rect = Rectangle(pos=self.pos,size=(12,100))
@@ -228,6 +226,12 @@ class Piano(Widget):
 
         layout.add_widget(btnstartPlaybackAllSongs)
 
+        btnStopPlayback = Button(text='Skip song')
+        btnStopPlayback.bind(
+            on_release = self.skipSongFunc)
+
+        layout.add_widget(btnStopPlayback)
+
         btnStopPlayback = Button(text='Stop songs')
         btnStopPlayback.bind(
             on_release = self.stopAllThreads)
@@ -242,7 +246,7 @@ class Piano(Widget):
 
         self.settings_popup = Popup(content=layout,
                                     title='Settings',
-                                    size_hint=(0.8, 0.5),
+                                    size_hint=(0.8, 0.7),
                                     pos_hint={'right': .9, 'top': 1})
 
         #First 3 notes of the piano on the left
@@ -346,19 +350,19 @@ class Piano(Widget):
         Clock.schedule_once(self.startListen)
 
     def listen(self):
-        if not threading.currentThread().stopped():
-            msg = self.inport.receive()
-            if msg.type != "clock":
-                self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
-                if msg.type == "note_on":
-                    # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                    self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
-                    self.keys[msg.note-21].update()
-                if msg.type == "note_off":
-                    # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
-                    self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                    self.keys[msg.note-21].update()
-            self.listen()
+        while True:
+            if not threading.currentThread().stopped():
+                msg = self.inport.receive()
+                if msg.type != "clock":
+                    self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
+                    if msg.type == "note_on":
+                        # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
+                        self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
+                        self.keys[msg.note-21].update()
+                    if msg.type == "note_off":
+                        # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
+                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
+                        self.keys[msg.note-21].update()
 
     def startPlaybackAllSongs(self, dt):
         if not self.activeOutputThreads:
