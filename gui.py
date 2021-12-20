@@ -49,12 +49,10 @@ class WhiteKey(Widget):
         self.originalCol = self.col
         self.pos = kwargs.get("pos")
         with self.canvas:
-            Color(*self.col)
-            Rectangle(pos=self.pos,size=(23,150))
+            self._color = Color(*self.col)
+            self._rect = Rectangle(pos=self.pos,size=(23,150))
     def update(self):
-        with self.canvas:
-            Color(*self.col)
-            Rectangle(pos=self.pos,size=(23,150))
+        self._color.rgba = self.col
 
 class BlackKey(Widget):
     def __init__(self, **kwargs):
@@ -63,12 +61,10 @@ class BlackKey(Widget):
         self.originalCol = self.col
         self.pos = kwargs.get("pos")
         with self.canvas:
-            Color(*self.col)
-            Rectangle(pos=self.pos,size=(12,100))
+            self._color = Color(*self.col)
+            self._rect = Rectangle(pos=self.pos,size=(12,100))
     def update(self):
-        with self.canvas:
-            Color(*self.col)
-            Rectangle(pos=self.pos,size=(12,100))
+        self._color.rgba = self.col
 
 class Piano(Widget):
     keys = list()
@@ -119,7 +115,7 @@ class Piano(Widget):
                 break
 
     def highlightKey(self, msg):
-        self.keys[msg.note-21].col = (0,msg.velocity/127,0)
+        self.keys[msg.note-21].col = (0,msg.velocity/127,0,1)
         self.keys[msg.note-21].update()
 
     def clearKey(self, msg):
