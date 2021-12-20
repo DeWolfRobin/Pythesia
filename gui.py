@@ -343,6 +343,7 @@ class Piano(Widget):
         except:
             pass
         self.clearKeys()
+        Clock.schedule_once(self.startListen)
 
     def listen(self):
         if not threading.currentThread().stopped():
@@ -351,7 +352,7 @@ class Piano(Widget):
                 self.msglog.append({"msg": msg, "due": time.time() + self.echo_delay})
                 if msg.type == "note_on":
                     # print(f"Note nr {msg.note} was hit with velocity {msg.velocity}")
-                    self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0)
+                    self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
                     self.keys[msg.note-21].update()
                 if msg.type == "note_off":
                     # print(f"Note nr {msg.note} was released with velocity {msg.velocity}")
