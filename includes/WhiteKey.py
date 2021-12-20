@@ -9,5 +9,3 @@ class WhiteKey(Widget):
         with self.canvas:
             self._color = Color(*self.col)
             self._rect = Rectangle(pos=self.pos,size=(23,150))
-    def update(self):
-        self._color.rgba = self.col

@@ -67,18 +67,15 @@ class Piano(Widget):
                 break
 
     def highlightKey(self, msg):
-        self.keys[msg.note-21].col = (0,msg.velocity/127,0,1)
-        self.keys[msg.note-21].update()
+        self.keys[msg.note-21]._color.rgba = (0,msg.velocity/127,0,1)
 
     def clearKey(self, msg):
-        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-        self.keys[msg.note-21].update()
+        self.keys[msg.note-21]._color.rgba = self.keys[msg.note-21].originalCol
 
     def clearKeys(self):
         for key in self.keys:
-            if key.col != key.originalCol:
-                key.col = key.originalCol
-            key.update()
+            if key._color.rgba != key.originalCol:
+                key._color.rgba = key.originalCol
 
     def skipSongFunc(self, dt):
         self.skipSong = True
@@ -95,8 +92,8 @@ class Piano(Widget):
                     self.playSong(os.path.join(self.preferences["dir"], song))
                 except Exception as e:
                     print(e)
-                    pass
                     self.clearKeys()
+                    pass
             else:
                 break
 
@@ -186,10 +183,9 @@ class Piano(Widget):
                 msg = self.inport.receive()
                 if msg.type != "clock":
                     if msg.type == "note_on":
-                        self.keys[msg.note-21].col = (0,(msg.velocity/127) + 0.3,0,1)
+                        self.keys[msg.note-21]._color.rgba = (0,(msg.velocity/127) + 0.3,0,1)
                     if msg.type == "note_off":
-                        self.keys[msg.note-21].col = self.keys[msg.note-21].originalCol
-                    self.keys[msg.note-21].update()
+                        self.keys[msg.note-21]._color.rgba = self.keys[msg.note-21].originalCol
 
     def startPlaybackAllSongs(self, dt):
         if not self.activeOutputThreads:
